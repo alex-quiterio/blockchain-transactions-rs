@@ -1,23 +1,18 @@
 # Customer Transactions API (Rust)
 
-A Rust port of [reneelouise/customer-transactions](https://github.com/reneelouise/customer-transactions) — an API for managing customer accounts and transactions. Built with [axum](https://github.com/tokio-rs/axum), [sqlx](https://github.com/launchbadge/sqlx), and PostgreSQL, with OpenAPI/Swagger documentation.
+An API for managing customer accounts and transactions. Built with [axum](https://github.com/tokio-rs/axum), [sqlx](https://github.com/launchbadge/sqlx), and PostgreSQL, with OpenAPI/Swagger documentation.
 
 ---
 
 ## Features
 
-- Create and retrieve customer accounts
-- Record transactions (purchases, payments, withdrawals)
+- Create and retrieve customer accounts, including current balance
+- Record transactions (purchases, payments, withdrawals) with a destination account for cross-account reconciliation
 - Enforces transaction rules (debits stored as negative amounts, payments as positive)
 - Swagger documentation for all endpoints
 - Migrations run automatically on startup (no external migrate CLI needed)
 - Dockerized database and API for easy local development
-
-## Differences from the Go original
-
-- Migrations are embedded and applied automatically at startup via `sqlx::migrate!`.
-- Error responses are structured JSON (`{"message", "details", "field"}`) matching the documented DTOs, instead of plain text.
-- `POST /transactions` responses include the real `transaction_id`.
+- GitHub Actions CI runs the test suite on every push and pull request
 
 ---
 
@@ -88,6 +83,7 @@ src/repository.rs  # Repository traits and the Postgres (sqlx) implementation
 src/model.rs       # Domain models and request/response DTOs
 tests/api_tests.rs # HTTP-level tests against the router with mock repositories
 migrations/        # Database migration files (applied automatically on startup)
+.github/workflows/ # CI: runs `cargo test --all-targets` on push and pull request
 ```
 
 ---
@@ -130,6 +126,12 @@ Content-Type: application/json
 GET /accounts/{accountId}
 ```
 
+### Get Account Balance
+
+```http
+GET /accounts/{accountId}/balance
+```
+
 ### Create Transaction
 
 ```http
@@ -139,12 +141,9 @@ Content-Type: application/json
 {
     "account_id": 1,
     "operation_type_id": 1,
-    "amount": 100.00
+    "amount": 100.00,
+    "destination_account_id": 2
 }
 ```
 
-Operation types 1–3 (purchase, installment purchase, withdrawal) are stored as negative amounts; type 4 (payment) is stored as positive.
-
----
-
-Rust port of the original Go project by Renee-Louise Nzegbulem.
+Operation types 1–3 (purchase, installment purchase, withdrawal) are stored as negative amounts; type 4 (payment) is stored as positive. `destination_account_id` is the counterparty account for the transaction and does not need to reference an existing account.
