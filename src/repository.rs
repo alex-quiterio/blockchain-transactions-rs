@@ -39,6 +39,7 @@ pub trait AccountRepo: Send + Sync {
 #[async_trait]
 pub trait TransactionRepo: Send + Sync {
     async fn create_transaction(&self, t: NewTransaction) -> Result<Transaction, RepoError>;
+    async fn get_balance_by_account(&self, account_id: i64) -> Result<f64, RepoError>;
 }
 
 /// Postgres implementation of both repositories, backed by a sqlx pool.
@@ -108,5 +109,15 @@ impl TransactionRepo for PgRepo {
             amount: t.amount,
             event_date: row.1,
         })
+    }
+
+    async fn get_balance_by_account(&self, account_id: i64) -> Result<f64, RepoError> {
+        let (balance,): (f64,) = sqlx::query_as(
+            "SELECT COALESCE(SUM(amount), 0)::float8 FROM transactions WHERE account_id = $1",
+        )
+        .bind(account_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(balance)
     }
 }

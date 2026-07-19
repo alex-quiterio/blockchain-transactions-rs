@@ -75,6 +75,14 @@ pub struct TransactionResponse {
     pub amount: f64,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BalanceResponse {
+    #[schema(example = 1)]
+    pub account_id: i64,
+    #[schema(example = 123.45)]
+    pub balance: f64,
+}
+
 // ----------------------
 // Generic error response
 // ----------------------

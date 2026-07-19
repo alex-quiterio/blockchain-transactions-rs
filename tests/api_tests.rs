@@ -16,12 +16,14 @@ use customer_transactions::server::{router, AppState};
 
 struct MockRepo {
     accounts: Mutex<Vec<Account>>,
+    transactions: Mutex<Vec<Transaction>>,
 }
 
 impl MockRepo {
     fn empty() -> Arc<Self> {
         Arc::new(Self {
             accounts: Mutex::new(vec![]),
+            transactions: Mutex::new(vec![]),
         })
     }
 
@@ -71,13 +73,27 @@ impl AccountRepo for MockRepo {
 #[async_trait]
 impl TransactionRepo for MockRepo {
     async fn create_transaction(&self, t: NewTransaction) -> Result<Transaction, RepoError> {
-        Ok(Transaction {
-            transaction_id: 1,
+        let mut transactions = self.transactions.lock().unwrap();
+        let tx = Transaction {
+            transaction_id: transactions.len() as i64 + 1,
             account_id: t.account_id,
             operation_type_id: t.operation_type_id,
             amount: t.amount,
             event_date: Utc::now(),
-        })
+        };
+        transactions.push(tx.clone());
+        Ok(tx)
+    }
+
+    async fn get_balance_by_account(&self, account_id: i64) -> Result<f64, RepoError> {
+        Ok(self
+            .transactions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| t.account_id == account_id)
+            .map(|t| t.amount)
+            .sum())
     }
 }
 
@@ -180,6 +196,53 @@ async fn get_account_returns_account() {
 async fn get_account_returns_404_for_missing_account() {
     let (status, _) = send_json(app(MockRepo::empty()), "GET", "/accounts/999", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn get_balance_returns_zero_for_account_with_no_transactions() {
+    let (status, body) = send_json(
+        app(MockRepo::with_account(1, "doc")),
+        "GET",
+        "/accounts/1/balance",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["account_id"], 1);
+    assert_eq!(body["balance"], 0.0);
+}
+
+#[tokio::test]
+async fn get_balance_returns_404_for_missing_account() {
+    let (status, _) = send_json(app(MockRepo::empty()), "GET", "/accounts/1/balance", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn get_balance_sums_transactions() {
+    let repo = MockRepo::with_account(1, "doc");
+    let app_router = || router(AppState::new(repo.clone(), repo.clone()));
+
+    send_json(
+        app_router(),
+        "POST",
+        "/transactions",
+        Some(json!({"account_id": 1, "operation_type_id": 1, "amount": 100.0})),
+    )
+    .await;
+    send_json(
+        app_router(),
+        "POST",
+        "/transactions",
+        Some(json!({"account_id": 1, "operation_type_id": 4, "amount": 30.0})),
+    )
+    .await;
+
+    let (status, body) = send_json(app_router(), "GET", "/accounts/1/balance", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["balance"], -70.0);
 }
 
 #[tokio::test]

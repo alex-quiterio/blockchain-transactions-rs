@@ -6,8 +6,8 @@ use axum::{
 };
 
 use crate::model::{
-    AccountResponse, CreateAccountRequest, ErrorResponse, NewTransaction, TransactionRequest,
-    TransactionResponse,
+    AccountResponse, BalanceResponse, CreateAccountRequest, ErrorResponse, NewTransaction,
+    TransactionRequest, TransactionResponse,
 };
 use crate::server::AppState;
 use crate::service::ServiceError;
@@ -124,6 +124,28 @@ pub async fn get_account(
     Ok(Json(AccountResponse {
         account_id: account.account_id,
         document_number: account.document_number,
+    }))
+}
+
+/// Get account current balance
+#[utoipa::path(
+    get,
+    path = "/accounts/{accountId}/balance",
+    tag = "accounts",
+    params(("accountId" = i64, Path, description = "Account ID")),
+    responses(
+        (status = 200, description = "Balance found", body = BalanceResponse),
+        (status = 404, description = "Account not found", body = ErrorResponse),
+    )
+)]
+pub async fn get_account_balance(
+    State(state): State<AppState>,
+    Path(account_id): Path<i64>,
+) -> Result<impl IntoResponse, ApiError> {
+    let balance = state.transactions.get_balance(account_id).await?;
+    Ok(Json(BalanceResponse {
+        account_id,
+        balance,
     }))
 }
 

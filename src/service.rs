@@ -112,6 +112,21 @@ impl TransactionService {
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to create transaction: {e}")))
     }
+
+    pub async fn get_balance(&self, account_id: i64) -> Result<f64, ServiceError> {
+        self.acc_repo
+            .get_by_id(account_id)
+            .await
+            .map_err(|e| match e {
+                RepoError::NotFound => ServiceError::AccountNotFound,
+                other => ServiceError::Internal(format!("failed to fetch account: {other}")),
+            })?;
+
+        self.tx_repo
+            .get_balance_by_account(account_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to fetch balance: {e}")))
+    }
 }
 
 // ----------------------
@@ -194,6 +209,17 @@ mod tests {
             };
             transactions.push(tx.clone());
             Ok(tx)
+        }
+
+        async fn get_balance_by_account(&self, account_id: i64) -> Result<f64, RepoError> {
+            Ok(self
+                .transactions
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|t| t.account_id == account_id)
+                .map(|t| t.amount)
+                .sum())
         }
     }
 

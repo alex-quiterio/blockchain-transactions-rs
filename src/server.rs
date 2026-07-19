@@ -34,7 +34,12 @@ impl AppState {
         description = "A Rust API for managing customer accounts and transactions",
         version = "1.0.0"
     ),
-    paths(api::create_account, api::get_account, api::create_transaction)
+    paths(
+        api::create_account,
+        api::get_account,
+        api::get_account_balance,
+        api::create_transaction
+    )
 )]
 struct ApiDoc;
 
@@ -58,6 +63,10 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/accounts", post(api::create_account))
         .route("/accounts/:accountId", get(api::get_account))
+        .route(
+            "/accounts/:accountId/balance",
+            get(api::get_account_balance),
+        )
         .route("/transactions", post(api::create_transaction))
         .route("/swagger", get(|| async { Html(SWAGGER_HTML) }))
         .route(
