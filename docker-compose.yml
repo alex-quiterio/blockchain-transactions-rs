@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:15
+    container_name: customer-transactions-db
+    environment:
+      POSTGRES_USER: customer
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: transactions
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer -d transactions"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: customer-transactions-api
+    environment:
+      DATABASE_DSN: postgres://customer:secret@db:5432/transactions?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
