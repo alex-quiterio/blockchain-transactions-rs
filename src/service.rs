@@ -205,6 +205,7 @@ mod tests {
                 account_id: t.account_id,
                 operation_type_id: t.operation_type_id,
                 amount: t.amount,
+                destination_account_id: t.destination_account_id,
                 event_date: Utc::now(),
             };
             transactions.push(tx.clone());
@@ -212,14 +213,18 @@ mod tests {
         }
 
         async fn get_balance_by_account(&self, account_id: i64) -> Result<f64, RepoError> {
-            Ok(self
-                .transactions
-                .lock()
-                .unwrap()
+            let transactions = self.transactions.lock().unwrap();
+            let source: f64 = transactions
                 .iter()
                 .filter(|t| t.account_id == account_id)
                 .map(|t| t.amount)
-                .sum())
+                .sum();
+            let destination: f64 = transactions
+                .iter()
+                .filter(|t| t.destination_account_id == account_id)
+                .map(|t| t.amount)
+                .sum();
+            Ok(source - destination)
         }
     }
 
@@ -258,6 +263,7 @@ mod tests {
                     account_id: 1,
                     operation_type_id: op,
                     amount: 100.0,
+                    destination_account_id: 2,
                 })
                 .await
                 .unwrap();
@@ -273,6 +279,7 @@ mod tests {
                 account_id: 1,
                 operation_type_id: 4,
                 amount: -123.45,
+                destination_account_id: 2,
             })
             .await
             .unwrap();
@@ -288,6 +295,7 @@ mod tests {
                     account_id: 1,
                     operation_type_id: op,
                     amount: 10.0,
+                    destination_account_id: 2,
                 })
                 .await
                 .unwrap_err();
@@ -303,9 +311,33 @@ mod tests {
                 account_id: 99,
                 operation_type_id: 1,
                 amount: 10.0,
+                destination_account_id: 2,
             })
             .await
             .unwrap_err();
         assert_eq!(err, ServiceError::AccountNotFound);
+    }
+
+    #[tokio::test]
+    async fn balance_mirrors_destination_transactions() {
+        let repo = Arc::new(MockRepo::with_account(1, "doc"));
+        repo.accounts.lock().unwrap().push(Account {
+            account_id: 2,
+            document_number: "doc2".to_string(),
+        });
+        let svc = tx_service(repo.clone());
+
+        // account 1 pays 100 to account 2: a debit for 1, a mirrored credit for 2.
+        svc.create_transaction(NewTransaction {
+            account_id: 1,
+            operation_type_id: 1,
+            amount: 100.0,
+            destination_account_id: 2,
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(svc.get_balance(1).await.unwrap(), -100.0);
+        assert_eq!(svc.get_balance(2).await.unwrap(), 100.0);
     }
 }

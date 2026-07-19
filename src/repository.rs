@@ -92,13 +92,14 @@ impl AccountRepo for PgRepo {
 impl TransactionRepo for PgRepo {
     async fn create_transaction(&self, t: NewTransaction) -> Result<Transaction, RepoError> {
         let row: (i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            "INSERT INTO transactions (account_id, operation_type_id, amount, event_date)
-             VALUES ($1, $2, $3, now())
+            "INSERT INTO transactions (account_id, operation_type_id, amount, destination_account_id, event_date)
+             VALUES ($1, $2, $3, $4, now())
              RETURNING transaction_id::int8, date_trunc('second', event_date)",
         )
         .bind(t.account_id)
         .bind(t.operation_type_id)
         .bind(t.amount)
+        .bind(t.destination_account_id)
         .fetch_one(&self.pool)
         .await?;
 
@@ -107,13 +108,22 @@ impl TransactionRepo for PgRepo {
             account_id: t.account_id,
             operation_type_id: t.operation_type_id,
             amount: t.amount,
+            destination_account_id: t.destination_account_id,
             event_date: row.1,
         })
     }
 
     async fn get_balance_by_account(&self, account_id: i64) -> Result<f64, RepoError> {
+        // Double-entry reconciliation: an account is credited/debited for
+        // transactions it originated, and mirrored (opposite sign) for
+        // transactions where it is the destination.
         let (balance,): (f64,) = sqlx::query_as(
-            "SELECT COALESCE(SUM(amount), 0)::float8 FROM transactions WHERE account_id = $1",
+            "SELECT (
+                 COALESCE(SUM(amount) FILTER (WHERE account_id = $1), 0)
+                 - COALESCE(SUM(amount) FILTER (WHERE destination_account_id = $1), 0)
+             )::float8
+             FROM transactions
+             WHERE account_id = $1 OR destination_account_id = $1",
         )
         .bind(account_id)
         .fetch_one(&self.pool)

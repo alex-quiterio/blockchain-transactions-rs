@@ -20,6 +20,9 @@ pub struct Transaction {
     pub account_id: i64,
     pub operation_type_id: i32,
     pub amount: f64,
+    /// Counterparty account for this transaction. Not required to reference
+    /// an existing account; kept for cross-account reconciliation.
+    pub destination_account_id: i64,
     pub event_date: DateTime<Utc>,
 }
 
@@ -29,6 +32,7 @@ pub struct NewTransaction {
     pub account_id: i64,
     pub operation_type_id: i32,
     pub amount: f64,
+    pub destination_account_id: i64,
 }
 
 // ----------------------
@@ -61,6 +65,10 @@ pub struct TransactionRequest {
     pub operation_type_id: i32,
     #[schema(example = 50.75)]
     pub amount: f64,
+    /// Counterparty account for this transaction. It does not need to exist
+    /// in the accounts table.
+    #[schema(example = 2)]
+    pub destination_account_id: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -73,6 +81,8 @@ pub struct TransactionResponse {
     pub operation_type_id: i32,
     #[schema(example = 123.45)]
     pub amount: f64,
+    #[schema(example = 2)]
+    pub destination_account_id: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

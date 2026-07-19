@@ -79,6 +79,7 @@ impl TransactionRepo for MockRepo {
             account_id: t.account_id,
             operation_type_id: t.operation_type_id,
             amount: t.amount,
+            destination_account_id: t.destination_account_id,
             event_date: Utc::now(),
         };
         transactions.push(tx.clone());
@@ -86,14 +87,18 @@ impl TransactionRepo for MockRepo {
     }
 
     async fn get_balance_by_account(&self, account_id: i64) -> Result<f64, RepoError> {
-        Ok(self
-            .transactions
-            .lock()
-            .unwrap()
+        let transactions = self.transactions.lock().unwrap();
+        let source: f64 = transactions
             .iter()
             .filter(|t| t.account_id == account_id)
             .map(|t| t.amount)
-            .sum())
+            .sum();
+        let destination: f64 = transactions
+            .iter()
+            .filter(|t| t.destination_account_id == account_id)
+            .map(|t| t.amount)
+            .sum();
+        Ok(source - destination)
     }
 }
 
@@ -228,14 +233,14 @@ async fn get_balance_sums_transactions() {
         app_router(),
         "POST",
         "/transactions",
-        Some(json!({"account_id": 1, "operation_type_id": 1, "amount": 100.0})),
+        Some(json!({"account_id": 1, "operation_type_id": 1, "amount": 100.0, "destination_account_id": 2})),
     )
     .await;
     send_json(
         app_router(),
         "POST",
         "/transactions",
-        Some(json!({"account_id": 1, "operation_type_id": 4, "amount": 30.0})),
+        Some(json!({"account_id": 1, "operation_type_id": 4, "amount": 30.0, "destination_account_id": 2})),
     )
     .await;
 
@@ -246,12 +251,54 @@ async fn get_balance_sums_transactions() {
 }
 
 #[tokio::test]
+async fn get_balance_reflects_destination_transactions() {
+    let repo = MockRepo::with_account(1, "doc");
+    repo.accounts.lock().unwrap().push(Account {
+        account_id: 2,
+        document_number: "doc2".to_string(),
+    });
+    let app_router = || router(AppState::new(repo.clone(), repo.clone()));
+
+    // account 1 sends a 100.0 debit-style transaction to account 2.
+    send_json(
+        app_router(),
+        "POST",
+        "/transactions",
+        Some(json!({"account_id": 1, "operation_type_id": 1, "amount": 100.0, "destination_account_id": 2})),
+    )
+    .await;
+
+    let (status, source_body) = send_json(app_router(), "GET", "/accounts/1/balance", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(source_body["balance"], -100.0);
+
+    let (status, destination_body) =
+        send_json(app_router(), "GET", "/accounts/2/balance", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(destination_body["balance"], 100.0);
+}
+
+#[tokio::test]
+async fn post_transactions_accepts_destination_account_not_in_db() {
+    let (status, body) = send_json(
+        app(MockRepo::with_account(1, "doc")),
+        "POST",
+        "/transactions",
+        Some(json!({"account_id": 1, "operation_type_id": 1, "amount": 100.0, "destination_account_id": 999999})),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["destination_account_id"], 999999);
+}
+
+#[tokio::test]
 async fn post_transactions_creates_debit_with_negative_amount() {
     let (status, body) = send_json(
         app(MockRepo::with_account(1, "doc")),
         "POST",
         "/transactions",
-        Some(json!({"account_id": 1, "operation_type_id": 1, "amount": 100.0})),
+        Some(json!({"account_id": 1, "operation_type_id": 1, "amount": 100.0, "destination_account_id": 2})),
     )
     .await;
 
@@ -266,7 +313,7 @@ async fn post_transactions_creates_payment_with_positive_amount() {
         app(MockRepo::with_account(1, "doc")),
         "POST",
         "/transactions",
-        Some(json!({"account_id": 1, "operation_type_id": 4, "amount": -50.0})),
+        Some(json!({"account_id": 1, "operation_type_id": 4, "amount": -50.0, "destination_account_id": 2})),
     )
     .await;
 
@@ -280,7 +327,7 @@ async fn post_transactions_rejects_invalid_operation_type() {
         app(MockRepo::with_account(1, "doc")),
         "POST",
         "/transactions",
-        Some(json!({"account_id": 1, "operation_type_id": 9, "amount": 10.0})),
+        Some(json!({"account_id": 1, "operation_type_id": 9, "amount": 10.0, "destination_account_id": 2})),
     )
     .await;
 
@@ -295,7 +342,7 @@ async fn post_transactions_returns_404_for_unknown_account() {
         app(MockRepo::empty()),
         "POST",
         "/transactions",
-        Some(json!({"account_id": 42, "operation_type_id": 1, "amount": 10.0})),
+        Some(json!({"account_id": 42, "operation_type_id": 1, "amount": 10.0, "destination_account_id": 2})),
     )
     .await;
 

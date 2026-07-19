@@ -171,6 +171,7 @@ pub async fn create_transaction(
             account_id: req.account_id,
             operation_type_id: req.operation_type_id,
             amount: req.amount,
+            destination_account_id: req.destination_account_id,
         })
         .await?;
 
@@ -181,6 +182,7 @@ pub async fn create_transaction(
             account_id: transaction.account_id,
             operation_type_id: transaction.operation_type_id,
             amount: transaction.amount,
+            destination_account_id: transaction.destination_account_id,
         }),
     ))
 }
